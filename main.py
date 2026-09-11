@@ -1,60 +1,61 @@
+from dataset import RegressionDataset
 import torch
-
 from plotter import TrainingPlotter
+from torch.utils.data import DataLoader
 
-torch.manual_seed(42)
+data = RegressionDataset(20, 0.1, 0.01)
+train_dataloader = DataLoader(data, batch_size=5, shuffle=True)
+test_dataloader = DataLoader(data, batch_size=5, shuffle=True)
+
+torch.manual_seed(67)
 
 x_dim = 1
 n = 10
-iters = 100000
-alpha = 0.1
+epochs = 100000
+alpha = 0.05
 beta = 0.5
-
-X = torch.rand((n, x_dim + 1))
-X[:, -1] = 1
-
-Y = X @ torch.rand((x_dim + 1, 1)) + (
-    torch.randn((n, 1)) * 0.01 + 0.1
-)
-
-torch.rand((n, 1))
 
 w = torch.rand((x_dim + 1, 1))
 
 
-def f():
+def f(X):
     return X @ w
 
+def grad_loss(X, y):
+    return X.T @ (X @ w - y)
 
-def grad_L():
-    return X.T @ (X @ w - Y)
-
-
-def L():
-    return 0.5 * torch.linalg.vector_norm(X @ w - Y, 2) ** 2
+def loss(X, y):
+    return 0.5 * torch.linalg.vector_norm(X @ w - y, 2) ** 2
 
 
-plotter = TrainingPlotter(X, Y, w, 1)
+X, y = next(iter(train_dataloader))
 
-g = grad = grad_L()
+plotter = TrainingPlotter(data.X, data.y, w, 1)
 
-for epoch in range(iters):
+g = grad_loss(X, y)
 
-    loss = L()
+epoch = 0
+while epoch < epochs:
+    for X, y in train_dataloader:
+        epoch += 1
 
-    print(f"Loss: {loss}, epoch: {epoch}")
+        grad = grad_loss(X, y)
 
-    plotter.update(
-        w=w,
-        loss=loss,
-        epoch=epoch
-    )
+        l = loss(X, y)
 
-    g = beta * g + (1 - beta) * grad
+        print(f"Loss: {l}, epoch: {epoch}")
 
-    w -= alpha * g
+        plotter.update(
+            w=w,
+            loss=l,
+            epoch=epoch,
+            X_batch=X,
+            y_batch=y
+        )
 
-    grad = grad_L()
+        g = beta * g + (1 - beta) * grad
+
+        w -= alpha * g
 
 
 plotter.show()

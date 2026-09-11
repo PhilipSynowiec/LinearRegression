@@ -4,11 +4,11 @@ import torch
 
 class TrainingPlotter:
 
-    def __init__(self, X, Y, initial_w, plot_epochs):
+    def __init__(self, X, y, initial_w, pause=0.0):
 
         self.X = X
-        self.Y = Y
-        self.plot_epochs = plot_epochs
+        self.y = y
+        self.pause = pause
 
         plt.ion()
 
@@ -19,16 +19,29 @@ class TrainingPlotter:
 
         self.fig, self.ax = plt.subplots()
 
-        self.ax.scatter(
-            X[:, :-1],
-            Y,
-            label="Data"
+        # all data points
+        self.all_points = self.ax.scatter(
+            X[:, 0],
+            y[:, 0],
+            alpha=0.4,
+            label="All data"
         )
 
-        y_pred = X @ initial_w
+        # highlighted current batch
+        self.batch_points = self.ax.scatter(
+            [],
+            [],
+            alpha=0.4,
+            label="Current batch"
+        )
+
+        sorted_indices = torch.argsort(X[:, 0])
+        self.X_sorted = X[sorted_indices]
+
+        y_pred = self.X_sorted @ initial_w
 
         self.line, = self.ax.plot(
-            X[:, :-1],
+            self.X_sorted[:, 0],
             y_pred.detach(),
             label="Prediction"
         )
@@ -73,7 +86,6 @@ class TrainingPlotter:
 
         loss_surface = torch.zeros_like(W)
 
-
         for i in range(W.shape[0]):
 
             for j in range(W.shape[1]):
@@ -88,7 +100,7 @@ class TrainingPlotter:
                 loss_surface[i, j] = (
                     0.5
                     * torch.linalg.vector_norm(
-                        prediction - Y,
+                        prediction - y,
                         2
                     ) ** 2
                 )
@@ -102,7 +114,6 @@ class TrainingPlotter:
             cmap="viridis"
         )
 
-
         self.ax2.contour(
             W.numpy(),
             B.numpy(),
@@ -113,7 +124,6 @@ class TrainingPlotter:
             linewidths=0.5
         )
 
-
         self.fig2.colorbar(
             contour,
             ax=self.ax2,
@@ -122,51 +132,67 @@ class TrainingPlotter:
 
 
         # ====================================================
-        # Optimization path
+        # Parameter path
         # ====================================================
 
         self.w_history = []
         self.b_history = []
-
 
         self.param_line, = self.ax2.plot(
             [],
             [],
             marker="o",
             markersize=0,
-            color="red",
-            linewidth=2,
-            label="Optimization path"
+            linewidth=1.5,
+            label="SGD path"
         )
-
 
         self.current_point, = self.ax2.plot(
             [],
             [],
             marker="o",
-            markersize=3,
-            color="white",
-            markeredgecolor="black"
+            markersize=1.5
         )
-
 
         self.ax2.legend()
 
 
-    def update(self, w, loss, epoch):
-        if epoch % self.plot_epochs != 0:
-            return
+    def update(
+        self,
+        w,
+        loss,
+        epoch,
+        X_batch,
+        y_batch
+    ):
 
         # ====================================================
         # Regression plot
         # ====================================================
 
+        prediction = self.X_sorted @ w
+
         self.line.set_ydata(
-            (self.X @ w).detach()
+            prediction.detach().flatten()
         )
 
+
+        # highlight current batch
+        batch_points = torch.stack(
+            (
+                X_batch[:, 0],
+                y_batch[:, 0]
+            ),
+            dim=1
+        )
+
+        self.batch_points.set_offsets(
+            batch_points.detach().numpy()
+        )
+
+
         self.ax.set_title(
-            f"Epoch {epoch} | Loss: {loss.item():.3f}"
+            f"Epoch {epoch} | Loss: {loss.item():.4f}"
         )
 
         self.fig.canvas.draw()
@@ -183,29 +209,24 @@ class TrainingPlotter:
         self.w_history.append(weight)
         self.b_history.append(bias)
 
-
         self.param_line.set_data(
             self.w_history,
             self.b_history
         )
-
 
         self.current_point.set_data(
             [weight],
             [bias]
         )
 
-
         self.ax2.set_title(
             f"Parameter path | Loss: {loss.item():.4f}"
         )
 
-
         self.fig2.canvas.draw()
         self.fig2.canvas.flush_events()
 
-
-        plt.pause(0.01)
+        plt.pause(self.pause)
 
 
     def show(self):
