@@ -1,61 +1,74 @@
+from sympy import plot
+
 from dataset import RegressionDataset
 import torch
 from plotter import TrainingPlotter
 from torch.utils.data import DataLoader
 
-data = RegressionDataset(20, 0.1, 0.01)
-train_dataloader = DataLoader(data, batch_size=5, shuffle=True)
-test_dataloader = DataLoader(data, batch_size=5, shuffle=True)
-
-torch.manual_seed(67)
+device = (
+    torch.accelerator.current_accelerator().type
+    if torch.accelerator.is_available()
+    else "cpu"
+)
+print(f"Using {device} device")
 
 x_dim = 1
-n = 10
 epochs = 100000
+batch_size = 5
 alpha = 0.05
 beta = 0.5
 
-w = torch.rand((x_dim + 1, 1))
+data = RegressionDataset(100, 0.1, 0.01)
+train_dataloader = DataLoader(data, batch_size=batch_size, shuffle=True)
+test_dataloader = DataLoader(data, batch_size=batch_size, shuffle=True)
 
 
-def f(X):
+def model(X):
     return X @ w
+
 
 def grad_loss(X, y):
     return X.T @ (X @ w - y)
 
-def loss(X, y):
-    return 0.5 * torch.linalg.vector_norm(X @ w - y, 2) ** 2
+
+def loss_fn(pred, y):
+    v = pred - y
+    return 0.5 * (v.T @ v)
+
+def train_loop():
+    global w
+    grad = 0
+    size = len(train_dataloader.dataset)
+    for batch, (X, y) in enumerate(train_dataloader):
+        pred = model(X)
+        loss = loss_fn(pred, y)
+
+        grad = beta * grad + (1 - beta) * grad_loss(X, y)
+        w -= alpha * grad
+
+        if batch % 10 == 0:
+            current = batch * batch_size + len(X)
+            print(f"loss: {loss.item():>7f}  [{current:>5d}/{size:>5d}]")
 
 
-X, y = next(iter(train_dataloader))
+def test_loop():
+    size = len(test_dataloader.dataset)
+    num_batches = len(test_dataloader)
+    test_loss = 0
 
-plotter = TrainingPlotter(data.X, data.y, w, 1)
+    with torch.no_grad():
+        for X, y in test_dataloader:
+            pred = model(X)
+            test_loss += loss_fn(pred, y).item()
 
-g = grad_loss(X, y)
-
-epoch = 0
-while epoch < epochs:
-    for X, y in train_dataloader:
-        epoch += 1
-
-        grad = grad_loss(X, y)
-
-        l = loss(X, y)
-
-        print(f"Loss: {l}, epoch: {epoch}")
-
-        plotter.update(
-            w=w,
-            loss=l,
-            epoch=epoch,
-            X_batch=X,
-            y_batch=y
-        )
-
-        g = beta * g + (1 - beta) * grad
-
-        w -= alpha * g
+    test_loss /= num_batches
+    print(f"Avg loss: {test_loss:>8f} \n")
 
 
-plotter.show()
+w = torch.rand((x_dim + 1, 1)) *10
+plotter = TrainingPlotter(data.X, data.y, w, pause=0.001)
+for t in range(epochs):
+    plotter.update(w=w)
+    print(f"Epoch {t + 1}\n-------------------------------")
+    train_loop()
+    test_loop()

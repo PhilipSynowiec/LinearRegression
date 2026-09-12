@@ -19,20 +19,10 @@ class TrainingPlotter:
 
         self.fig, self.ax = plt.subplots()
 
-        # all data points
-        self.all_points = self.ax.scatter(
+        self.ax.scatter(
             X[:, 0],
             y[:, 0],
-            alpha=0.4,
-            label="All data"
-        )
-
-        # highlighted current batch
-        self.batch_points = self.ax.scatter(
-            [],
-            [],
-            alpha=0.4,
-            label="Current batch"
+            label="Data"
         )
 
         sorted_indices = torch.argsort(X[:, 0])
@@ -157,14 +147,7 @@ class TrainingPlotter:
         self.ax2.legend()
 
 
-    def update(
-        self,
-        w,
-        loss,
-        epoch,
-        X_batch,
-        y_batch
-    ):
+    def update(self, w):
 
         # ====================================================
         # Regression plot
@@ -174,25 +157,6 @@ class TrainingPlotter:
 
         self.line.set_ydata(
             prediction.detach().flatten()
-        )
-
-
-        # highlight current batch
-        batch_points = torch.stack(
-            (
-                X_batch[:, 0],
-                y_batch[:, 0]
-            ),
-            dim=1
-        )
-
-        self.batch_points.set_offsets(
-            batch_points.detach().numpy()
-        )
-
-
-        self.ax.set_title(
-            f"Epoch {epoch} | Loss: {loss.item():.4f}"
         )
 
         self.fig.canvas.draw()
@@ -219,17 +183,7 @@ class TrainingPlotter:
             [bias]
         )
 
-        self.ax2.set_title(
-            f"Parameter path | Loss: {loss.item():.4f}"
-        )
-
         self.fig2.canvas.draw()
         self.fig2.canvas.flush_events()
 
         plt.pause(self.pause)
-
-
-    def show(self):
-
-        plt.ioff()
-        plt.show()
