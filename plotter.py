@@ -4,13 +4,20 @@ import torch
 
 class TrainingPlotter:
 
-    def __init__(self, X, y, initial_w, pause=0.0):
+    def __init__(self, X, y, model, pause=0.001):
 
-        self.X = X
-        self.y = y
+        self.X = X.detach().cpu()
+        self.y = y.detach().cpu()
         self.pause = pause
 
         plt.ion()
+
+
+        # ====================================================
+        # Get initial parameters
+        # ====================================================
+
+        weight, bias = self._get_parameters(model)
 
 
         # ====================================================
@@ -20,19 +27,23 @@ class TrainingPlotter:
         self.fig, self.ax = plt.subplots()
 
         self.ax.scatter(
-            X[:, 0],
-            y[:, 0],
+            self.X[:, 0],
+            self.y[:, 0],
             label="Data"
         )
 
-        sorted_indices = torch.argsort(X[:, 0])
-        self.X_sorted = X[sorted_indices]
+        sorted_indices = torch.argsort(self.X[:, 0])
 
-        y_pred = self.X_sorted @ initial_w
+        self.X_sorted = self.X[sorted_indices]
+
+        y_pred = (
+            self.X_sorted[:, 0] * weight
+            + bias
+        )
 
         self.line, = self.ax.plot(
             self.X_sorted[:, 0],
-            y_pred.detach(),
+            y_pred,
             label="Prediction"
         )
 
@@ -74,27 +85,27 @@ class TrainingPlotter:
             indexing="xy"
         )
 
-        loss_surface = torch.zeros_like(W)
 
-        for i in range(W.shape[0]):
+        # ====================================================
+        # Vectorized MSE loss calculation
+        # ====================================================
 
-            for j in range(W.shape[1]):
+        x = self.X[:, 0].reshape(1, 1, -1)
+        target = self.y[:, 0].reshape(1, 1, -1)
 
-                w_test = torch.tensor([
-                    [W[i, j]],
-                    [B[i, j]]
-                ])
+        prediction = (
+            W.unsqueeze(-1) * x
+            + B.unsqueeze(-1)
+        )
 
-                prediction = X @ w_test
+        loss_surface = (
+            (prediction - target) ** 2
+        ).mean(dim=-1)
 
-                loss_surface[i, j] = (
-                    0.5
-                    * torch.linalg.vector_norm(
-                        prediction - y,
-                        2
-                    ) ** 2
-                )
 
+        # ====================================================
+        # Draw loss landscape
+        # ====================================================
 
         contour = self.ax2.contourf(
             W.numpy(),
@@ -117,7 +128,7 @@ class TrainingPlotter:
         self.fig2.colorbar(
             contour,
             ax=self.ax2,
-            label="Loss"
+            label="MSE Loss"
         )
 
 
@@ -131,8 +142,6 @@ class TrainingPlotter:
         self.param_line, = self.ax2.plot(
             [],
             [],
-            marker="o",
-            markersize=0,
             linewidth=1.5,
             label="SGD path"
         )
@@ -141,22 +150,46 @@ class TrainingPlotter:
             [],
             [],
             marker="o",
-            markersize=1.5
+            markersize=4
         )
 
         self.ax2.legend()
 
 
-    def update(self, w):
+    # ========================================================
+    # Extract weight and bias from nn.Linear
+    # ========================================================
+
+    def _get_parameters(self, model):
+
+        linear = model.linear_stack[0]
+
+        weight = linear.weight.detach().cpu().item()
+        bias = linear.bias.detach().cpu().item()
+
+        return weight, bias
+
+
+    # ========================================================
+    # Live update
+    # ========================================================
+
+    def update(self, model):
+
+        weight, bias = self._get_parameters(model)
+
 
         # ====================================================
         # Regression plot
         # ====================================================
 
-        prediction = self.X_sorted @ w
+        prediction = (
+            self.X_sorted[:, 0] * weight
+            + bias
+        )
 
         self.line.set_ydata(
-            prediction.detach().flatten()
+            prediction
         )
 
         self.fig.canvas.draw()
@@ -166,9 +199,6 @@ class TrainingPlotter:
         # ====================================================
         # Parameter-space plot
         # ====================================================
-
-        weight = w[0, 0].item()
-        bias = w[1, 0].item()
 
         self.w_history.append(weight)
         self.b_history.append(bias)
@@ -187,3 +217,13 @@ class TrainingPlotter:
         self.fig2.canvas.flush_events()
 
         plt.pause(self.pause)
+
+
+    # ========================================================
+    # Keep plots open when training finishes
+    # ========================================================
+
+    def show(self):
+
+        plt.ioff()
+        plt.show()
